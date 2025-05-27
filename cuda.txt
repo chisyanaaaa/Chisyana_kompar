@@ -1,0 +1,80 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <cuda_runtime.h>
+
+#define INPUT_FEATURES 4
+#define OUTPUT_NEURONS 2
+#define BATCH_SIZE 3
+
+__device__ float relu(float x) {
+    return fmaxf(0.0f, x);
+}
+
+__device__ void xavier_init(float* weights, int in_features, int out_features) {
+    // Xavier handled di host
+}
+
+__global__ void forward_pass(float* input, float* weights, float* output) {
+    int idx = threadIdx.x;
+
+    if (idx >= BATCH_SIZE) return;
+
+    for (int j = 0; j < OUTPUT_NEURONS; j++) {
+        float sum = 0.0f;
+        for (int i = 0; i < INPUT_FEATURES; i++) {
+            sum += input[idx * INPUT_FEATURES + i] * weights[i * OUTPUT_NEURONS + j];
+        }
+        output[idx * OUTPUT_NEURONS + j] = relu(sum);
+    }
+}
+
+void host_xavier_init(float* weights, int in_features, int out_features) {
+    float limit = sqrtf(6.0f / (in_features + out_features));
+    for (int i = 0; i < in_features * out_features; i++) {
+        weights[i] = ((float)rand() / RAND_MAX) * 2 * limit - limit;
+    }
+}
+
+int main() {
+    float h_input[BATCH_SIZE][INPUT_FEATURES] = {
+        {85, 90, 88, 95},
+        {65, 60, 55, 70},
+        {40, 45, 38, 42}
+    };
+
+    float h_weights[INPUT_FEATURES][OUTPUT_NEURONS];
+    float h_output[BATCH_SIZE][OUTPUT_NEURONS];
+
+    float *d_input, *d_weights, *d_output;
+
+    host_xavier_init((float*)h_weights, INPUT_FEATURES, OUTPUT_NEURONS);
+
+    cudaMalloc(&d_input, sizeof(h_input));
+    cudaMalloc(&d_weights, sizeof(h_weights));
+    cudaMalloc(&d_output, sizeof(h_output));
+
+    cudaMemcpy(d_input, h_input, sizeof(h_input), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_weights, h_weights, sizeof(h_weights), cudaMemcpyHostToDevice);
+
+    forward_pass<<<1, BATCH_SIZE>>>(d_input, d_weights, d_output);
+
+    cudaMemcpy(h_output, d_output, sizeof(h_output), cudaMemcpyDeviceToHost);
+
+    printf("=== HASIL PREDIKSI GPU (CUDA) ===\n");
+    for (int b = 0; b < BATCH_SIZE; b++) {
+        printf("Siswa %d → Skor Tidak Lulus: %.2f, Skor Lulus: %.2f → ",
+               b + 1, h_output[b][0], h_output[b][1]);
+
+        if (h_output[b][1] > h_output[b][0])
+            printf("LULUS\n");
+        else
+            printf("TIDAK LULUS\n");
+    }
+
+    cudaFree(d_input);
+    cudaFree(d_weights);
+    cudaFree(d_output);
+
+    return 0;
+}
